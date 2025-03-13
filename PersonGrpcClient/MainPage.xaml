@@ -63,28 +63,27 @@
                     <!-- Age Entry -->
                     <VerticalStackLayout Grid.Column="0" Grid.Row="1" Spacing="5">
                         <Label 
-                        Text="Age"
-                        FontSize="14"
-                        TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}"/>
-                      <Entry 
-                        Text="{Binding Age, StringFormat='{0}'}"
-                        Placeholder="Enter age"
-                        Keyboard="Numeric"
-                        ReturnType="Next"/>
+    Text="Age"
+    FontSize="14"
+    TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}"/>
+                        <Entry 
+    Text="{Binding Age, Converter={StaticResource NullableValueConverter}}"
+    Placeholder="Enter age"
+    Keyboard="Numeric"
+    ReturnType="Next"/>
                     </VerticalStackLayout>
 
-                    <!-- Segunda Coluna, Segunda Linha -->
                     <!-- Weight Entry -->
                     <VerticalStackLayout Grid.Column="1" Grid.Row="1" Spacing="5">
                         <Label 
-                            Text="Weight (kg)"
-                            FontSize="14"
-                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}"/>
+    Text="Weight (kg)"
+    FontSize="14"
+    TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}"/>
                         <Entry 
-                            Text="{Binding Weight, StringFormat='{0}'}"
-                            Placeholder="Enter weight"
-                            Keyboard="Numeric"
-                            ReturnType="Done"/>
+    Text="{Binding Weight, Converter={StaticResource NullableValueConverter}}"
+    Placeholder="Enter weight"
+    Keyboard="Numeric"
+    ReturnType="Done"/>
                     </VerticalStackLayout>
 
                     <!-- Botão e Loading (Centralizado, ocupando ambas as colunas) -->
