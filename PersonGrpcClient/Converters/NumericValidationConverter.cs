@@ -6,13 +6,13 @@ namespace PersonGrpcClient.Converters
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
+            if (value == null) return true;
+
             if (value is string str)
             {
-                // Verifica se está vazio
                 if (string.IsNullOrWhiteSpace(str))
                     return true;
 
-                // Tenta converter para número
                 if (double.TryParse(str, out double number))
                 {
                     return number <= 0;

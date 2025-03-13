@@ -25,9 +25,17 @@ namespace PersonGrpcClient.Services
 
         public async Task<Person> SavePersonLocallyAsync(Person person)
         {
-            person.CreatedAt = DateTime.UtcNow;
+            if (person.CreatedAt == default)
+            {
+                person.CreatedAt = DateTime.Now;
+            }
             await _database.InsertAsync(person);
             return person;
+        }
+
+        public async Task<Person> GetPersonAsync(int id)
+        {
+            return await _database.GetAsync<Person>(id);
         }
 
         public async Task UpdatePersonAsync(Person person)
@@ -51,6 +59,7 @@ namespace PersonGrpcClient.Services
                 {
                     person.IsSynced = true;
                     person.ServerId = serverId;
+                    person.LastSyncAttempt = DateTime.Now;
                     await _database.UpdateAsync(person);
                     Debug.WriteLine($"Marked person {localId} as synced with server ID {serverId}");
                 }

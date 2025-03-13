@@ -14,21 +14,24 @@ rpc SyncPeople (stream PersonRequest) returns (SyncResponse);
 }
 
 message PersonRequest {
-string name = 1;
-string lastName = 2;
-int32 age = 3;
-double weight = 4;
-string localId = 5;  // ID local do SQLite
+ string name = 1;
+ string lastName = 2;
+ int32 age = 3;
+ double weight = 4;
+ string localId = 5;
+ string createdAt = 6;  // Data de criação
 }
 
 message PersonResponse {
-int32 id = 1;        // ID do PostgreSQL
-string name = 2;
-string lastName = 3;
-int32 age = 4;
-double weight = 5;
-bool saved = 6;      // Indica se foi salvo com sucesso
-string message = 7;  // Mensagem de status
+ int32 id = 1;
+ string name = 2;
+ string lastName = 3;
+ int32 age = 4;
+ double weight = 5;
+ bool saved = 6;
+ string message = 7;
+ string createdAt = 8;  // Data de criação no servidor
+ string syncedAt = 9;   // Data de sincronização
 }
 
 message SyncResponse {

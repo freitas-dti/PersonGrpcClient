@@ -60,29 +60,31 @@
                     </VerticalStackLayout>
 
                     <!-- Primeira Coluna, Segunda Linha -->
+                    <!-- Age Entry -->
                     <VerticalStackLayout Grid.Column="0" Grid.Row="1" Spacing="5">
                         <Label 
                         Text="Age"
                         FontSize="14"
                         TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}"/>
-                        <Entry 
-                        Text="{Binding Age}"
+                      <Entry 
+                        Text="{Binding Age, StringFormat='{0}'}"
                         Placeholder="Enter age"
                         Keyboard="Numeric"
                         ReturnType="Next"/>
                     </VerticalStackLayout>
 
                     <!-- Segunda Coluna, Segunda Linha -->
+                    <!-- Weight Entry -->
                     <VerticalStackLayout Grid.Column="1" Grid.Row="1" Spacing="5">
                         <Label 
-                        Text="Weight (kg)"
-                        FontSize="14"
-                        TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}"/>
+                            Text="Weight (kg)"
+                            FontSize="14"
+                            TextColor="{AppThemeBinding Light={StaticResource Gray600}, Dark={StaticResource Gray400}}"/>
                         <Entry 
-                        Text="{Binding Weight}"
-                        Placeholder="Enter weight"
-                        Keyboard="Numeric"
-                        ReturnType="Done"/>
+                            Text="{Binding Weight, StringFormat='{0}'}"
+                            Placeholder="Enter weight"
+                            Keyboard="Numeric"
+                            ReturnType="Done"/>
                     </VerticalStackLayout>
 
                     <!-- Botão e Loading (Centralizado, ocupando ambas as colunas) -->
@@ -92,6 +94,7 @@
                         Text="Save Person"
                         Command="{Binding SaveCommand}"
                         IsEnabled="{Binding IsNotBusy}"
+                        BackgroundColor="Blue"
                         HorizontalOptions="Center"
                         WidthRequest="200"
                         HeightRequest="50"
@@ -120,45 +123,53 @@
                     HorizontalOptions="Center"/>
 
                     <CollectionView 
-                    ItemsSource="{Binding SavedPeople}"
-                    EmptyView="No records found"
-                    HeightRequest="300">
+ItemsSource="{Binding SavedPeople}"
+EmptyView="No records found"
+HeightRequest="300">
                         <CollectionView.ItemTemplate>
                             <DataTemplate>
                                 <Frame Margin="0,5" 
-                                   Padding="15" 
-                                   BorderColor="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
-                                   CornerRadius="8"
-                                   HasShadow="True">
-                                    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto">
-                                        <Label Text="{Binding Name, StringFormat='Name: {0}'}" 
-                                           Grid.Row="0" Grid.Column="0"
-                                           FontAttributes="Bold"/>
-                                        <Label Text="{Binding LastName, StringFormat='Last Name: {0}'}" 
-                                           Grid.Row="0" Grid.Column="1"
-                                           FontAttributes="Bold"/>
-                                        <Label Text="{Binding Age, StringFormat='Age: {0}'}" 
-                                           Grid.Row="1" Grid.Column="0"/>
-                                        <Label Text="{Binding Weight, StringFormat='Weight: {0:F1} kg'}" 
-                                           Grid.Row="1" Grid.Column="1"/>
-                                        <Label Grid.Row="2" 
-                                           Grid.Column="0" 
-                                           Grid.ColumnSpan="2"
-                                           HorizontalOptions="Center"
-                                           Margin="0,5,0,0">
-                                            <Label.Text>
-                                                <Binding Path="DisplayStatus"/>
-                                            </Label.Text>
-                                            <Label.TextColor>
-                                                <AppThemeBinding Light="{StaticResource Primary}"
-                                                    Dark="{StaticResource White}"/>
-                                            </Label.TextColor>
-                                            <Label.FontAttributes>
-                                                <OnPlatform x:TypeArguments="FontAttributes">
-                                                    <On Platform="Android,iOS" Value="Italic"/>
-                                                </OnPlatform>
-                                            </Label.FontAttributes>
-                                        </Label>
+               Padding="15" 
+               BorderColor="{AppThemeBinding Light={StaticResource Gray300}, Dark={StaticResource Gray600}}"
+               CornerRadius="8"
+               HasShadow="True">
+
+                                    <Grid ColumnDefinitions="*, *" 
+                  ColumnSpacing="15">
+
+                                        <!-- Coluna da Esquerda: Dados Pessoais -->
+                                        <VerticalStackLayout Grid.Column="0" 
+                                   Spacing="8">
+                                            <Label Text="Personal Information"
+                           FontAttributes="Bold"
+                           FontSize="16"
+                           Margin="0,0,0,5"/>
+
+                                            <VerticalStackLayout Spacing="4">
+                                                <Label Text="{Binding Name, StringFormat='Name: {0}'}" />
+                                                <Label Text="{Binding LastName, StringFormat='Last Name: {0}'}" />
+                                                <Label Text="{Binding Age, StringFormat='Age: {0}'}" />
+                                                <Label Text="{Binding Weight, StringFormat='Weight: {0:F1} kg'}" />
+                                            </VerticalStackLayout>
+                                        </VerticalStackLayout>
+
+                                        <!-- Coluna da Direita: Status e Sincronização -->
+                                        <VerticalStackLayout Grid.Column="1" 
+                                   Spacing="8">
+                                            <Label Text="Sync Status"
+                           FontAttributes="Bold"
+                           FontSize="16"
+                           Margin="0,0,0,5"/>
+
+                                            <!-- Status Principal -->
+                                            <Label Text="{Binding DisplayStatus}"
+                           TextColor="{Binding StatusColor}"
+                           FontAttributes="Bold"/>
+
+                                            <!-- Detalhes do Status -->
+                                            <Label Text="{Binding DetailedStatus}"
+                           FontSize="12"/>
+                                        </VerticalStackLayout>
                                     </Grid>
                                 </Frame>
                             </DataTemplate>
@@ -167,6 +178,9 @@
                     <Button 
                         Text="Clear Local Data"
                         Command="{Binding ClearDataCommand}"
+                         WidthRequest="200"
+                         HeightRequest="50"
+                         FontAttributes="Bold"
                         BackgroundColor="Red"
                         TextColor="White"
                         Margin="0,10,0,0"/>

@@ -41,7 +41,9 @@ namespace PersonGrpcClient.Services
                     LastName = person.LastName,
                     Age = person.Age,
                     Weight = person.Weight,
-                    LocalId = person.Id.ToString()  // Certifique-se que está convertendo para string
+                    LocalId = person.Id.ToString(),  // Certifique-se que está convertendo para string
+                    CreatedAt = person.CreatedAt.ToString("O")  // Envia a data de criação
+
                 };
 
                 Debug.WriteLine($"Sending person with LocalId: {request.LocalId} to server");

@@ -17,8 +17,8 @@ namespace PersonGrpcClient.ViewModels
 
         private string _name;
         private string _lastName;
-        private int _age;
-        private double _weight;
+        private int? _age;
+        private double? _weight;
         private bool _isBusy;
         private string _connectionStatusText;
         private Color _connectionStatusColor;
@@ -67,7 +67,7 @@ namespace PersonGrpcClient.ViewModels
             }
         }
 
-        public int Age
+        public int? Age
         {
             get => _age;
             set
@@ -77,7 +77,7 @@ namespace PersonGrpcClient.ViewModels
             }
         }
 
-        public double Weight
+        public double? Weight
         {
             get => _weight;
             set
@@ -152,16 +152,17 @@ namespace PersonGrpcClient.ViewModels
             }
 
             // Validação da Idade
-            if (Age <= 0)
+            if (!Age.HasValue || Age <= 0)
             {
                 validationErrors.Add("Age must be greater than 0");
             }
 
             // Validação do Peso
-            if (Weight <= 0)
+            if (!Weight.HasValue || Weight <= 0)
             {
                 validationErrors.Add("Weight must be greater than 0");
             }
+
 
             // Se houver erros, mostra todos de uma vez
             if (validationErrors.Any())
@@ -202,8 +203,10 @@ namespace PersonGrpcClient.ViewModels
                 {
                     Name = Name,
                     LastName = LastName,
-                    Age = Age,
-                    Weight = Weight
+                    Age = Age.Value,
+                    Weight = Weight.Value,
+                    CreatedAt = DateTime.Now,  // Garante que a data de criação está definida
+                    LastSyncAttempt = null     // Inicialmente null, será definido na sincronização
                 };
 
                 if (_connectivity.NetworkAccess == NetworkAccess.Internet)
@@ -213,19 +216,23 @@ namespace PersonGrpcClient.ViewModels
                     if (response.Saved)
                     {
                         // Salvar localmente com a referência do ID do servidor
-                        person.IsSynced = true; // Marca como sincronizado
+                        person.IsSynced = true;
+                        person.ServerId = response.Id;
+                        person.LastSyncAttempt = DateTime.Now;  // Define a data de sincronização
                         await _databaseService.SavePersonLocallyAsync(person);
 
                         // Atualizar a lista com o ID do servidor
                         var displayPerson = new PersonDisplay
                         {
                             Id = person.Id,
-                            ServerId = response.Id, // ID do PostgreSQL
+                            ServerId = response.Id,
                             Name = person.Name,
                             LastName = person.LastName,
                             Age = person.Age,
                             Weight = person.Weight,
-                            Status = SyncStatus.Synced
+                            Status = SyncStatus.Synced,
+                            CreatedAt = person.CreatedAt,           // Copia a data de criação
+                            LastSyncAttempt = person.LastSyncAttempt // Copia a data de sincronização
                         };
 
                         _dispatcher.Dispatch(() =>
@@ -250,7 +257,9 @@ namespace PersonGrpcClient.ViewModels
                         LastName = person.LastName,
                         Age = person.Age,
                         Weight = person.Weight,
-                        Status = SyncStatus.LocallySaved
+                        Status = SyncStatus.LocallySaved,
+                        CreatedAt = person.CreatedAt,           // Copiando a data de criação
+                        LastSyncAttempt = person.LastSyncAttempt // Copiando a data de sincronização
                     };
 
                     _dispatcher.Dispatch(() =>
@@ -277,41 +286,36 @@ namespace PersonGrpcClient.ViewModels
         // Método para forçar atualização da UI após sincronização
         private async Task LoadSavedPeople()
         {
-            try
+            var people = await _databaseService.GetAllPeopleAsync();
+            var displayPeople = people.Select(p => new PersonDisplay
             {
-                var people = await _databaseService.GetAllPeopleAsync();
-                var displayPeople = people.Select(p => new PersonDisplay
-                {
-                    Id = p.Id,
-                    ServerId = p.ServerId,
-                    Name = p.Name,
-                    LastName = p.LastName,
-                    Age = p.Age,
-                    Weight = p.Weight,
-                    Status = p.IsSynced ? SyncStatus.Synced : SyncStatus.LocallySaved
-                }).ToList();
+                Id = p.Id,
+                ServerId = p.ServerId,
+                Name = p.Name,
+                LastName = p.LastName,
+                Age = p.Age,
+                Weight = p.Weight,
+                Status = p.IsSynced ? SyncStatus.Synced : SyncStatus.LocallySaved,
+                CreatedAt = p.CreatedAt,           // Incluindo a data de criação
+                LastSyncAttempt = p.LastSyncAttempt // Incluindo a data de sincronização
+            }).ToList();
 
-                _dispatcher.Dispatch(() =>
-                {
-                    SavedPeople.Clear();
-                    foreach (var person in displayPeople)
-                    {
-                        SavedPeople.Add(person);
-                    }
-                });
-            }
-            catch (Exception ex)
+            _dispatcher.Dispatch(() =>
             {
-                Debug.WriteLine($"Error loading saved people: {ex.Message}");
-            }
+                SavedPeople.Clear();
+                foreach (var person in displayPeople)
+                {
+                    SavedPeople.Add(person);
+                }
+            });
         }
 
         private void ClearForm()
         {
             Name = string.Empty;
             LastName = string.Empty;
-            Age = 0;
-            Weight = 0;
+            Age = null;
+            Weight = null;
         }
 
         private async void OnConnectivityChanged(object sender, ConnectivityChangedEventArgs e)
@@ -350,16 +354,31 @@ namespace PersonGrpcClient.ViewModels
                             continue;
                         }
 
+                        // Atualiza status para sincronização em andamento
+                        UpdatePersonStatus(person.Id, SyncStatus.SyncInProgress);
+                        await UpdatePersonStatusInDatabase(person.Id, SyncStatus.SyncInProgress); // Adicionado aqui
+                        Debug.WriteLine($"Starting sync for person ID {person.Id}");
+
                         var response = await _grpcClient.SavePersonAsync(person);
                         if (response.Saved)
                         {
                             await _databaseService.MarkAsSyncedAsync(person.Id, response.Id);
                             processedIds.Add(person.Id);
-                            Debug.WriteLine($"Successfully synced person with local ID {person.Id}");
+                            UpdatePersonStatus(person.Id, SyncStatus.Synced, response.Id);
+                            await UpdatePersonStatusInDatabase(person.Id, SyncStatus.Synced, response.Id); // Adicionado aqui
+                            Debug.WriteLine($"Successfully synced person with local ID {person.Id}, server ID {response.Id}");
+                        }
+                        else
+                        {
+                            UpdatePersonStatus(person.Id, SyncStatus.SyncFailed);
+                            await UpdatePersonStatusInDatabase(person.Id, SyncStatus.SyncFailed); // Adicionado aqui
+                            Debug.WriteLine($"Sync failed for person ID {person.Id}");
                         }
                     }
                     catch (Exception ex)
                     {
+                        UpdatePersonStatus(person.Id, SyncStatus.SyncFailed);
+                        await UpdatePersonStatusInDatabase(person.Id, SyncStatus.SyncFailed); // Adicionado aqui
                         Debug.WriteLine($"Error syncing person {person.Id}: {ex.Message}");
                         // Continua com o próximo registro em caso de erro
                     }
@@ -373,7 +392,8 @@ namespace PersonGrpcClient.ViewModels
                     {
                         await Application.Current.MainPage.DisplayAlert(
                             "Sync Complete",
-                            $"Successfully synced {processedIds.Count} records",
+                            $"Successfully synced {processedIds.Count} records\n" +
+                            $"Sync completed at: {DateTime.Now:g}",
                             "OK");
                     });
                 }
@@ -385,9 +405,53 @@ namespace PersonGrpcClient.ViewModels
                 {
                     await Application.Current.MainPage.DisplayAlert(
                         "Sync Error",
-                        $"Failed to sync data: {ex.Message}",
+                        $"Failed to sync data: {ex.Message}\n" +
+                        $"Time: {DateTime.Now:g}",
                         "OK");
                 });
+            }
+        }
+
+        private void UpdatePersonStatus(int localId, SyncStatus status, int? serverId = null)
+        {
+            var person = SavedPeople.FirstOrDefault(p => p.Id == localId);
+            if (person != null)
+            {
+                _dispatcher.Dispatch(() =>
+                {
+                    person.Status = status;
+                    person.ServerId = serverId;
+                    person.LastSyncAttempt = DateTime.Now; // Garante que a data está sendo definida
+                    Debug.WriteLine($"Updating status: Status={status}, ServerId={serverId}, LastSyncAttempt={person.LastSyncAttempt}");
+
+                    // Força atualização da UI
+                    var index = SavedPeople.IndexOf(person);
+                    if (index >= 0)
+                    {
+                        SavedPeople.RemoveAt(index);
+                        SavedPeople.Insert(index, person);
+                    }
+                });
+            }
+        }
+
+        // Adicione este método para atualizar o status no banco de dados
+        private async Task UpdatePersonStatusInDatabase(int localId, SyncStatus status, int? serverId = null)
+        {
+            try
+            {
+                var person = await _databaseService.GetPersonAsync(localId);
+                if (person != null)
+                {
+                    person.IsSynced = status == SyncStatus.Synced;
+                    person.ServerId = serverId;
+                    person.LastSyncAttempt = DateTime.Now;
+                    await _databaseService.UpdatePersonAsync(person);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error updating person status in database: {ex.Message}");
             }
         }
 
