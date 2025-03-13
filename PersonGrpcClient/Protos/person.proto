@@ -1,0 +1,38 @@
+// Protos/person.proto
+syntax = "proto3";
+
+option csharp_namespace = "PersonGrpcClient";
+
+package person;
+
+service PersonService {
+// Enviar uma pessoa
+rpc SavePerson (PersonRequest) returns (PersonResponse);
+
+// Enviar múltiplas pessoas (para sincronização)
+rpc SyncPeople (stream PersonRequest) returns (SyncResponse);
+}
+
+message PersonRequest {
+string name = 1;
+string lastName = 2;
+int32 age = 3;
+double weight = 4;
+string localId = 5;  // ID local do SQLite
+}
+
+message PersonResponse {
+int32 id = 1;        // ID do PostgreSQL
+string name = 2;
+string lastName = 3;
+int32 age = 4;
+double weight = 5;
+bool saved = 6;      // Indica se foi salvo com sucesso
+string message = 7;  // Mensagem de status
+}
+
+message SyncResponse {
+bool success = 1;
+repeated string syncedIds = 2;  // IDs locais sincronizados
+string message = 3;
+}
