@@ -50,7 +50,7 @@ namespace PersonGrpcClient.Services
                                 .ToListAsync();
         }
 
-        public async Task MarkAsSyncedAsync(int localId, int serverId)
+        public async Task MarkAsSyncedAsync(int localId, int serverId, DateTime syncTime)
         {
             try
             {
@@ -59,7 +59,7 @@ namespace PersonGrpcClient.Services
                 {
                     person.IsSynced = true;
                     person.ServerId = serverId;
-                    person.LastSyncAttempt = DateTime.Now;
+                    person.LastSyncAttempt = syncTime;
                     await _database.UpdateAsync(person);
                     Debug.WriteLine($"Marked person {localId} as synced with server ID {serverId}");
                 }

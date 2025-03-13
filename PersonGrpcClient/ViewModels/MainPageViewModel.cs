@@ -356,29 +356,28 @@ namespace PersonGrpcClient.ViewModels
 
                         // Atualiza status para sincronização em andamento
                         UpdatePersonStatus(person.Id, SyncStatus.SyncInProgress);
-                        await UpdatePersonStatusInDatabase(person.Id, SyncStatus.SyncInProgress); // Adicionado aqui
                         Debug.WriteLine($"Starting sync for person ID {person.Id}");
 
                         var response = await _grpcClient.SavePersonAsync(person);
                         if (response.Saved)
                         {
-                            await _databaseService.MarkAsSyncedAsync(person.Id, response.Id);
+                            // Define a data de sincronização como agora
+                            DateTime syncTime = DateTime.Now;
+
+                            await _databaseService.MarkAsSyncedAsync(person.Id, response.Id, syncTime);
                             processedIds.Add(person.Id);
-                            UpdatePersonStatus(person.Id, SyncStatus.Synced, response.Id);
-                            await UpdatePersonStatusInDatabase(person.Id, SyncStatus.Synced, response.Id); // Adicionado aqui
-                            Debug.WriteLine($"Successfully synced person with local ID {person.Id}, server ID {response.Id}");
+                            UpdatePersonStatus(person.Id, SyncStatus.Synced, response.Id, syncTime);
+                            Debug.WriteLine($"Successfully synced person with local ID {person.Id}, server ID {response.Id} at {syncTime}");
                         }
                         else
                         {
                             UpdatePersonStatus(person.Id, SyncStatus.SyncFailed);
-                            await UpdatePersonStatusInDatabase(person.Id, SyncStatus.SyncFailed); // Adicionado aqui
                             Debug.WriteLine($"Sync failed for person ID {person.Id}");
                         }
                     }
                     catch (Exception ex)
                     {
                         UpdatePersonStatus(person.Id, SyncStatus.SyncFailed);
-                        await UpdatePersonStatusInDatabase(person.Id, SyncStatus.SyncFailed); // Adicionado aqui
                         Debug.WriteLine($"Error syncing person {person.Id}: {ex.Message}");
                         // Continua com o próximo registro em caso de erro
                     }
@@ -405,14 +404,13 @@ namespace PersonGrpcClient.ViewModels
                 {
                     await Application.Current.MainPage.DisplayAlert(
                         "Sync Error",
-                        $"Failed to sync data: {ex.Message}\n" +
-                        $"Time: {DateTime.Now:g}",
+                        $"Failed to sync data: {ex.Message}",
                         "OK");
                 });
             }
         }
 
-        private void UpdatePersonStatus(int localId, SyncStatus status, int? serverId = null)
+        private void UpdatePersonStatus(int localId, SyncStatus status, int? serverId = null, DateTime? syncTime = null)
         {
             var person = SavedPeople.FirstOrDefault(p => p.Id == localId);
             if (person != null)
@@ -421,8 +419,7 @@ namespace PersonGrpcClient.ViewModels
                 {
                     person.Status = status;
                     person.ServerId = serverId;
-                    person.LastSyncAttempt = DateTime.Now; // Garante que a data está sendo definida
-                    Debug.WriteLine($"Updating status: Status={status}, ServerId={serverId}, LastSyncAttempt={person.LastSyncAttempt}");
+                    person.LastSyncAttempt = syncTime ?? DateTime.Now;
 
                     // Força atualização da UI
                     var index = SavedPeople.IndexOf(person);
