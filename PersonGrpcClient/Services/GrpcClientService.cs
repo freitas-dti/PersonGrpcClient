@@ -29,6 +29,20 @@ namespace PersonGrpcClient.Services
             return handler;
         }
 
+        public async Task PingServerAsync()
+        {
+            try
+            {
+                // Você precisará adicionar este método no seu proto
+                await _client.PingAsync(new Google.Protobuf.WellKnownTypes.Empty());
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Ping failed: {ex.Message}");
+                throw;
+            }
+        }
+
         public async Task<PersonResponse> SavePersonAsync(Person person)
         {
             try

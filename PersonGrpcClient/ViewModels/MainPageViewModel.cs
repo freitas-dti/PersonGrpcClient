@@ -14,6 +14,7 @@ namespace PersonGrpcClient.ViewModels
         private readonly GrpcClientService _grpcClient;
         private readonly IConnectivity _connectivity;
         private readonly IDispatcher _dispatcher;
+        private readonly IDispatcherTimer _timer;
 
         private string _name;
         private string _lastName;
@@ -24,6 +25,7 @@ namespace PersonGrpcClient.ViewModels
         private Color _connectionStatusColor;
         private ObservableCollection<PersonDisplay> _syncedPeople;
         private ObservableCollection<PersonDisplay> _pendingPeople;
+        private bool _isCheckingServer;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -40,12 +42,20 @@ namespace PersonGrpcClient.ViewModels
 
             SyncedPeople = new ObservableCollection<PersonDisplay>();
             PendingPeople = new ObservableCollection<PersonDisplay>();
+
             SaveCommand = new Command(async () => await SavePersonAsync());
             ClearDataCommand = new Command(async () => await ClearDataAsync());
+            SyncNowCommand = new Command(async () => await SyncPendingDataAsync(), () => HasPendingRecords && !IsBusy);
 
             _connectivity.ConnectivityChanged += OnConnectivityChanged;
             UpdateConnectionStatus();
             LoadSavedPeople();
+
+            // Iniciar o timer para verificação periódica
+            _timer = Application.Current.Dispatcher.CreateTimer();
+            _timer.Interval = TimeSpan.FromSeconds(30);
+            _timer.Tick += Timer_Tick;
+            _timer.Start();
         }
 
         #region Properties
@@ -98,6 +108,7 @@ namespace PersonGrpcClient.ViewModels
                 _isBusy = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IsNotBusy));
+                (SyncNowCommand as Command)?.ChangeCanExecute();
             }
         }
 
@@ -139,12 +150,20 @@ namespace PersonGrpcClient.ViewModels
             set
             {
                 _pendingPeople = value;
+                _pendingPeople.CollectionChanged += (s, e) =>
+                {
+                    OnPropertyChanged(nameof(HasPendingRecords));
+                    (SyncNowCommand as Command)?.ChangeCanExecute();
+                };
                 OnPropertyChanged();
             }
         }
 
+        public bool HasPendingRecords => PendingPeople?.Any() == true;
+
         public ICommand SaveCommand { get; }
         public ICommand ClearDataCommand { get; }
+        public ICommand SyncNowCommand { get; }
 
         #endregion
 
@@ -276,13 +295,11 @@ namespace PersonGrpcClient.ViewModels
                             errorMessage,
                             "OK");
 
-                        // Salvar localmente em caso de erro
                         await SaveLocally(person);
                     }
                 }
                 else
                 {
-                    // Salvar localmente quando offline
                     await SaveLocally(person);
                 }
             }
@@ -300,7 +317,6 @@ namespace PersonGrpcClient.ViewModels
             }
         }
 
-        // Método auxiliar para salvar localmente
         private async Task SaveLocally(Person person)
         {
             await _databaseService.SavePersonLocallyAsync(person);
@@ -371,70 +387,67 @@ namespace PersonGrpcClient.ViewModels
         private async void OnConnectivityChanged(object sender, ConnectivityChangedEventArgs e)
         {
             UpdateConnectionStatus();
-            if (e.NetworkAccess == NetworkAccess.Internet)
+            if (e.NetworkAccess == NetworkAccess.Internet && HasPendingRecords && !_isCheckingServer)
             {
-                await SyncPendingDataAsync();
+                try
+                {
+                    _isCheckingServer = true;
+                    await SyncPendingDataAsync();
+                }
+                finally
+                {
+                    _isCheckingServer = false;
+                }
             }
         }
 
         private async Task SyncPendingDataAsync()
         {
+            if (IsBusy || !HasPendingRecords) return;
+
             try
             {
-                var unsyncedPeople = await _databaseService.GetUnsyncedPeopleAsync();
-                if (!unsyncedPeople.Any())
-                {
-                    Debug.WriteLine("No unsynced data to sync");
-                    return;
-                }
-
-                Debug.WriteLine($"Found {unsyncedPeople.Count} unsynced records");
+                IsBusy = true;
                 var processedIds = new HashSet<int>();
                 var failedSync = new List<string>();
 
-                foreach (var person in unsyncedPeople)
+                foreach (var person in PendingPeople.ToList())
                 {
                     try
                     {
-                        if (processedIds.Contains(person.Id) || await _databaseService.IsPersonSyncedAsync(person.Id))
-                        {
-                            Debug.WriteLine($"Skipping already synced/processed person with ID {person.Id}");
+                        if (processedIds.Contains(person.Id))
                             continue;
-                        }
 
                         UpdatePersonStatus(person.Id, SyncStatus.SyncInProgress);
-                        Debug.WriteLine($"Starting sync for person ID {person.Id}");
+                        Debug.WriteLine($"Syncing person ID {person.Id}");
 
                         try
                         {
-                            var response = await _grpcClient.SavePersonAsync(person);
+                            var dbPerson = await _databaseService.GetPersonAsync(person.Id);
+                            if (dbPerson == null) continue;
+
+                            var response = await _grpcClient.SavePersonAsync(dbPerson);
                             if (response.Saved)
                             {
                                 DateTime syncTime = DateTime.Now;
                                 await _databaseService.MarkAsSyncedAsync(person.Id, response.Id, syncTime);
                                 processedIds.Add(person.Id);
 
-                                // Move o registro de PendingPeople para SyncedPeople
                                 _dispatcher.Dispatch(() =>
                                 {
-                                    var personToMove = PendingPeople.FirstOrDefault(p => p.Id == person.Id);
-                                    if (personToMove != null)
-                                    {
-                                        PendingPeople.Remove(personToMove);
-                                        personToMove.Status = SyncStatus.Synced;
-                                        personToMove.ServerId = response.Id;
-                                        personToMove.LastSyncAttempt = syncTime;
-                                        SyncedPeople.Add(personToMove);
-                                    }
+                                    PendingPeople.Remove(person);
+                                    person.Status = SyncStatus.Synced;
+                                    person.ServerId = response.Id;
+                                    person.LastSyncAttempt = syncTime;
+                                    SyncedPeople.Add(person);
                                 });
 
-                                Debug.WriteLine($"Successfully synced person with local ID {person.Id}, server ID {response.Id} at {syncTime}");
+                                Debug.WriteLine($"Successfully synced person {person.Id}");
                             }
                             else
                             {
                                 failedSync.Add($"{person.Name} {person.LastName} - Server rejected the data");
                                 UpdatePersonStatus(person.Id, SyncStatus.SyncFailed);
-                                Debug.WriteLine($"Sync failed for person ID {person.Id} - Server rejected");
                             }
                         }
                         catch (Grpc.Core.RpcException ex)
@@ -460,44 +473,51 @@ namespace PersonGrpcClient.ViewModels
                     }
                 }
 
-                // Mostrar resultado da sincronização
-                _dispatcher.Dispatch(async () =>
+                if (processedIds.Any() || failedSync.Any())
                 {
-                    if (processedIds.Any())
-                    {
-                        var successMessage = $"Successfully synced {processedIds.Count} records\n" +
-                                           $"Sync completed at: {DateTime.Now:g}";
-
-                        if (failedSync.Any())
-                        {
-                            successMessage += "\n\nFailed to sync:\n" + string.Join("\n", failedSync);
-                        }
-
-                        await Application.Current.MainPage.DisplayAlert(
-                            failedSync.Any() ? "Sync Partially Complete" : "Sync Complete",
-                            successMessage,
-                            "OK");
-                    }
-                    else if (failedSync.Any())
-                    {
-                        await Application.Current.MainPage.DisplayAlert(
-                            "Sync Failed",
-                            $"Failed to sync records:\n{string.Join("\n", failedSync)}",
-                            "OK");
-                    }
-                });
+                    await ShowSyncResults(processedIds.Count, failedSync);
+                }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Sync Error: {ex.Message}");
-                _dispatcher.Dispatch(async () =>
-                {
-                    await Application.Current.MainPage.DisplayAlert(
-                        "Sync Error",
-                        "Failed to sync data. Please check your connection and try again later.",
-                        "OK");
-                });
+                await Application.Current.MainPage.DisplayAlert(
+                    "Sync Error",
+                    "Failed to sync data. Please check your connection and try again.",
+                    "OK");
             }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task ShowSyncResults(int successCount, List<string> failedSync)
+        {
+            var message = new System.Text.StringBuilder();
+
+            if (successCount > 0)
+            {
+                message.AppendLine($"Successfully synced {successCount} records");
+                message.AppendLine($"Sync completed at: {DateTime.Now:g}");
+            }
+
+            if (failedSync.Any())
+            {
+                if (successCount > 0) message.AppendLine();
+                message.AppendLine("Failed to sync:");
+                foreach (var failure in failedSync)
+                {
+                    message.AppendLine($"- {failure}");
+                }
+            }
+
+            await Application.Current.MainPage.DisplayAlert(
+                failedSync.Any() ?
+                    (successCount > 0 ? "Sync Partially Complete" : "Sync Failed")
+                    : "Sync Complete",
+                message.ToString(),
+                "OK");
         }
 
         private void UpdatePersonStatus(int localId, SyncStatus status, int? serverId = null, DateTime? syncTime = null)
@@ -511,8 +531,12 @@ namespace PersonGrpcClient.ViewModels
                     person.ServerId = serverId;
                     person.LastSyncAttempt = syncTime ?? DateTime.Now;
 
-                    // Se o status for SyncInProgress ou SyncFailed, apenas atualize o item
-                    if (status == SyncStatus.SyncInProgress || status == SyncStatus.SyncFailed)
+                    if (status == SyncStatus.Synced && serverId.HasValue)
+                    {
+                        PendingPeople.Remove(person);
+                        SyncedPeople.Add(person);
+                    }
+                    else
                     {
                         var index = PendingPeople.IndexOf(person);
                         if (index >= 0)
@@ -521,32 +545,7 @@ namespace PersonGrpcClient.ViewModels
                             PendingPeople.Insert(index, person);
                         }
                     }
-                    // Se foi sincronizado com sucesso, mova para SyncedPeople
-                    else if (status == SyncStatus.Synced && serverId.HasValue)
-                    {
-                        PendingPeople.Remove(person);
-                        SyncedPeople.Add(person);
-                    }
                 });
-            }
-        }
-
-        private async Task UpdatePersonStatusInDatabase(int localId, SyncStatus status, int? serverId = null)
-        {
-            try
-            {
-                var person = await _databaseService.GetPersonAsync(localId);
-                if (person != null)
-                {
-                    person.IsSynced = status == SyncStatus.Synced;
-                    person.ServerId = serverId;
-                    person.LastSyncAttempt = DateTime.Now;
-                    await _databaseService.UpdatePersonAsync(person);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error updating person status in database: {ex.Message}");
             }
         }
 
@@ -576,6 +575,7 @@ namespace PersonGrpcClient.ViewModels
             }
             catch (Exception ex)
             {
+                Debug.WriteLine($"Error clearing data: {ex.Message}");
                 await Application.Current.MainPage.DisplayAlert(
                     "Error",
                     $"Failed to clear data: {ex.Message}",
@@ -599,6 +599,22 @@ namespace PersonGrpcClient.ViewModels
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
+        private async void Timer_Tick(object sender, EventArgs e)
+        {
+            if (_connectivity.NetworkAccess == NetworkAccess.Internet && HasPendingRecords && !IsBusy)
+            {
+                await SyncPendingDataAsync();
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_timer != null)
+            {
+                _timer.Stop();
+                _timer.Tick -= Timer_Tick;
+            }
+        }
         #endregion
     }
 }

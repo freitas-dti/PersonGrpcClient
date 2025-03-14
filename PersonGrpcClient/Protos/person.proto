@@ -1,6 +1,8 @@
 // Protos/person.proto
 syntax = "proto3";
 
+import "google/protobuf/empty.proto";
+
 option csharp_namespace = "PersonGrpcClient";
 
 package person;
@@ -11,6 +13,9 @@ rpc SavePerson (PersonRequest) returns (PersonResponse);
 
 // Enviar múltiplas pessoas (para sincronização)
 rpc SyncPeople (stream PersonRequest) returns (SyncResponse);
+
+rpc Ping (google.protobuf.Empty) returns (google.protobuf.Empty);
+
 }
 
 message PersonRequest {

@@ -128,15 +128,32 @@
 
             <!-- Registros Pendentes -->
             <VerticalStackLayout Grid.Row="3" Spacing="10">
-                <HorizontalStackLayout Spacing="10">
-                    <Label Text="🕒" 
-           FontSize="20"
-           VerticalOptions="Center"/>
-                    <Label Text="Pending Records"
-           FontSize="20"
-           FontAttributes="Bold"
-           TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource White}}"/>
-                </HorizontalStackLayout>
+                <!-- Cabeçalho com Título e Botão Sync -->
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <!-- Título com ícone -->
+                    <HorizontalStackLayout Grid.Column="0" 
+                         Spacing="10">
+                        <Label Text="🕒" 
+               FontSize="20"
+               VerticalOptions="Center"/>
+                        <Label Text="Pending Records"
+               FontSize="20"
+               FontAttributes="Bold"
+               TextColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource White}}"/>
+                    </HorizontalStackLayout>
+
+                    <!-- Botão Sync Now -->
+                    <Button Grid.Column="2"
+            Text="🔄 Sync Now"
+            Command="{Binding SyncNowCommand}"
+            IsVisible="{Binding HasPendingRecords}"
+            BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+            TextColor="White"
+            FontSize="14"
+            Padding="10,5"
+            CornerRadius="15"
+            Margin="0,0,0,5"/>
+                </Grid>
 
                 <CollectionView ItemsSource="{Binding PendingPeople}"
                 EmptyView="No pending records"
