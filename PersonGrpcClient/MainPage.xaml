@@ -45,8 +45,9 @@
                            Keyboard="Numeric"/>
                     </VerticalStackLayout>
 
-                    <VerticalStackLayout Grid.Column="1" 
-                                   Spacing="5">
+                    <VerticalStackLayout 
+                        Grid.Column="1" 
+                         Spacing="5">
                         <Label Text="Weight (kg)"
                            FontSize="14"/>
                         <Entry Text="{Binding Weight, StringFormat='{0}'}"
@@ -58,6 +59,9 @@
                 <Button Text="Save Person"
                     Command="{Binding SaveCommand}"
                     IsEnabled="{Binding IsNotBusy}"
+                    CornerRadius="5"
+                    WidthRequest="200"
+                        HorizontalOptions="End"
                     Margin="0,10"/>
 
                 <ActivityIndicator IsRunning="{Binding IsBusy}"
@@ -70,12 +74,22 @@
         <Grid Grid.Column="1" 
           RowDefinitions="Auto, *, Auto, *">
 
-            <!-- Status da Conexão -->
-            <Label Grid.Row="0"
-               Text="{Binding ConnectionStatusText}"
-               TextColor="{Binding ConnectionStatusColor}"
-               HorizontalOptions="End"
-               Margin="0,0,0,10"/>
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto">
+                <Label Grid.Column="0"
+                   Text="{Binding ConnectionStatusText}"
+                   TextColor="{Binding ConnectionStatusColor}"
+                   HorizontalOptions="Start"
+                   VerticalOptions="Center"/>
+                <Button Grid.Column="1"
+                    Text="🗑️ Clear Local Data"
+                    Command="{Binding ClearDataCommand}"
+                    BackgroundColor="Red"
+                    TextColor="White"
+                    FontSize="14"
+                    Padding="10,5"
+                    CornerRadius="5"
+                    Margin="10,0"/>
+            </Grid>
 
             <!-- Registros Sincronizados -->
             <VerticalStackLayout Grid.Row="1" Spacing="10">
@@ -151,7 +165,7 @@
             TextColor="White"
             FontSize="14"
             Padding="10,5"
-            CornerRadius="15"
+            CornerRadius="5"
             Margin="0,0,0,5"/>
                 </Grid>
 
@@ -190,11 +204,6 @@
                         </DataTemplate>
                     </CollectionView.ItemTemplate>
                 </CollectionView>
-
-                <Button Text="Clear Local Data"
-        Command="{Binding ClearDataCommand}"
-        BackgroundColor="Red"
-        TextColor="White"/>
             </VerticalStackLayout>
         </Grid>
     </Grid>
