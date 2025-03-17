@@ -116,6 +116,80 @@ namespace PersonGrpcClient.Services
                 throw;
             }
         }
+
+        public async Task<List<PersonResponse>> GetAllPeopleFromServerAsync()
+        {
+            try
+            {
+                Debug.WriteLine("Starting GetAllPeopleFromServerAsync");
+                var people = new List<PersonResponse>();
+
+                using var call = _client.GetAllPeople(new EmptyRequest());
+
+                var count = 0;
+                while (await call.ResponseStream.MoveNext(CancellationToken.None))
+                {
+                    var person = call.ResponseStream.Current;
+                    Debug.WriteLine($"Received from server - ID: {person.Id}, Name: {person.Name}, Created: {person.CreatedAt}");
+
+                    // Validar os dados recebidos
+                    if (string.IsNullOrEmpty(person.CreatedAt))
+                    {
+                        Debug.WriteLine($"Warning: CreatedAt is empty for person {person.Id}");
+                    }
+
+                    people.Add(person);
+                    count++;
+                }
+
+                Debug.WriteLine($"Total records retrieved: {people.Count}");
+
+                // Log detalhado dos registros recebidos
+                foreach (var person in people)
+                {
+                    Debug.WriteLine($"Person in list - ID: {person.Id}, Name: {person.Name}, Created: {person.CreatedAt}");
+                }
+
+                return people;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error getting people from server: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                throw;
+            }
+        }
+
+        public async Task<(PersonResponse Response, TimeSpan Duration)> UpdatePersonAsync(Person person)
+        {
+            try
+            {
+                Debug.WriteLine($"Updating person with ServerId: {person.ServerId}");
+                var startTime = DateTime.Now;
+
+                var request = new PersonRequest
+                {
+                    Name = person.Name,
+                    LastName = person.LastName,
+                    Age = person.Age,
+                    Weight = person.Weight,
+                    LocalId = person.ServerId.ToString(), // Aqui usamos o ServerId
+                    CreatedAt = person.CreatedAt.ToString("O")
+                };
+
+                var response = await _client.UpdatePersonAsync(request);
+                var duration = DateTime.Now - startTime;
+
+                Debug.WriteLine($"Update response received for ServerId: {response.Id}. Duration: {duration.TotalMilliseconds}ms");
+
+                return (response, duration);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in UpdatePersonAsync: {ex.Message}");
+                throw;
+            }
+        }
     }
 }
 
