@@ -9,7 +9,7 @@
 
         <!-- Cabeçalho com Status e Botões -->
         <Grid Grid.Row="0" 
-          ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto"
+          ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto"
           Margin="0,0,0,20">
 
 
@@ -24,7 +24,7 @@
 
             <!-- Sync All Button -->
         <Button Grid.Column="2"
-             Text="↓ Sync All"
+             Text="↓ Sync All (gRPC)"
              Command="{Binding SyncAllDataCommand}"
              BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
              TextColor="White"
@@ -33,9 +33,20 @@
              CornerRadius="5"
              Margin="10,0"
              IsEnabled="{Binding IsNotBusy}"/>
-       
-        <!-- Randomize Button -->
-         <Button Grid.Column="3"
+
+            <Button Grid.Column="3"
+                 Text="↓ Sync All (REST)"
+                 Command="{Binding SyncAllRestCommand}"
+                 BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                 TextColor="White"
+                 FontSize="14"
+                 Padding="10,5"
+                 CornerRadius="5"
+                 Margin="10,0"
+                 IsEnabled="{Binding IsNotBusy}"/>  
+
+            <!-- Randomize Button -->
+         <Button Grid.Column="4"
              Text="🎲 Randomize Data"
              Command="{Binding RandomizeDataCommand}"
              BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
@@ -47,8 +58,8 @@
              IsEnabled="{Binding IsNotBusy}"/>
             
             <!-- Sync Changes Button -->
-            <Button Grid.Column="4"
-            Text="↑ Sync Changes"
+            <Button Grid.Column="5"
+            Text="↑ Sync Changes (gRPC)"
             Command="{Binding SyncChangesCommand}"
             BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
             TextColor="White"
@@ -58,8 +69,19 @@
             Margin="10,0"
             IsEnabled="{Binding IsNotBusy}"/>
 
+            <Button Grid.Column="6"
+                Text="↑ Sync Changes (REST)"
+                Command="{Binding SyncChangesRestCommand}"
+                BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                TextColor="White"
+                FontSize="14"
+                Padding="10,5"
+                CornerRadius="5"
+                Margin="10,0"
+                IsEnabled="{Binding IsNotBusy}"/>
+
             <!-- Clear Data Button -->
-        <Button Grid.Column="5"
+        <Button Grid.Column="7"
              Text="🗑️ Clear Data"
              Command="{Binding ClearDataCommand}"
              BackgroundColor="Red"

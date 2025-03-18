@@ -31,6 +31,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<MainPageViewModel>();
         builder.Services.AddSingleton<MainPage>();
 
+        // REST
+        builder.Services.AddSingleton<RestClientService>();
+
 #if DEBUG
         builder.Logging.AddDebug();
 #endif

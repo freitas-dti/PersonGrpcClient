@@ -1,4 +1,5 @@
 ﻿using Grpc.Net.Client;
+using Grpc.Net.Compression;
 using Microsoft.Extensions.Logging;
 using PersonGrpcClient.Models;
 using System.Diagnostics;
@@ -12,20 +13,22 @@ namespace PersonGrpcClient.Services
 
         public GrpcClientService()
         {
-            var channel = GrpcChannel.ForAddress("http://localhost:50051", new GrpcChannelOptions
+            var channelOptions = new GrpcChannelOptions
             {
-                HttpHandler = GetHttpHandler()
-            });
+                MaxReceiveMessageSize = null, // Remove limite de tamanho
+                MaxSendMessageSize = null,    // Remove limite de tamanho
+                HttpHandler = GetHttpHandler(),
+            };
+
+            var channel = GrpcChannel.ForAddress("http://localhost:50051", channelOptions);
             _client = new PersonService.PersonServiceClient(channel);
         }
 
         private HttpClientHandler GetHttpHandler()
         {
             var handler = new HttpClientHandler();
-#if DEBUG
             handler.ServerCertificateCustomValidationCallback =
                 HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
-#endif
             return handler;
         }
 
@@ -121,51 +124,50 @@ namespace PersonGrpcClient.Services
         {
             try
             {
-                Debug.WriteLine("Starting GetAllPeopleFromServerAsync");
+                Debug.WriteLine("gRPC: Starting GetAllPeopleFromServerAsync");
+                var startTime = DateTime.Now;
                 var people = new List<PersonResponse>();
 
                 using var call = _client.GetAllPeople(new EmptyRequest());
 
                 var count = 0;
+                var batchStartTime = DateTime.Now;
+                const int batchSize = 1000;
+
                 while (await call.ResponseStream.MoveNext(CancellationToken.None))
                 {
                     var person = call.ResponseStream.Current;
-                    Debug.WriteLine($"Received from server - ID: {person.Id}, Name: {person.Name}, Created: {person.CreatedAt}");
-
-                    // Validar os dados recebidos
-                    if (string.IsNullOrEmpty(person.CreatedAt))
-                    {
-                        Debug.WriteLine($"Warning: CreatedAt is empty for person {person.Id}");
-                    }
-
                     people.Add(person);
                     count++;
+
+                    if (count % batchSize == 0)
+                    {
+                        var batchDuration = DateTime.Now - batchStartTime;
+                        Debug.WriteLine($"gRPC: Received {count} records in {batchDuration.TotalMilliseconds}ms");
+                        batchStartTime = DateTime.Now;
+                    }
                 }
 
-                Debug.WriteLine($"Total records retrieved: {people.Count}");
-
-                // Log detalhado dos registros recebidos
-                foreach (var person in people)
-                {
-                    Debug.WriteLine($"Person in list - ID: {person.Id}, Name: {person.Name}, Created: {person.CreatedAt}");
-                }
+                var totalDuration = DateTime.Now - startTime;
+                Debug.WriteLine($"gRPC: Total records: {count}");
+                Debug.WriteLine($"gRPC: Total time: {totalDuration.TotalMilliseconds}ms");
+                Debug.WriteLine($"gRPC: Average time per record: {totalDuration.TotalMilliseconds / count:F2}ms");
 
                 return people;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error getting people from server: {ex.Message}");
-                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                Debug.WriteLine($"gRPC Error: {ex.Message}");
                 throw;
             }
         }
 
-        public async Task<(PersonResponse Response, TimeSpan Duration)> UpdatePersonAsync(Person person)
+        public async Task<PersonResponse> UpdatePersonAsync(Person person)
         {
             try
             {
-                Debug.WriteLine($"Updating person with ServerId: {person.ServerId}");
                 var startTime = DateTime.Now;
+                Debug.WriteLine($"gRPC: Starting update for ServerId: {person.ServerId}");
 
                 var request = new PersonRequest
                 {
@@ -173,20 +175,21 @@ namespace PersonGrpcClient.Services
                     LastName = person.LastName,
                     Age = person.Age,
                     Weight = person.Weight,
-                    LocalId = person.ServerId.ToString(), // Aqui usamos o ServerId
+                    LocalId = person.ServerId.ToString(),
                     CreatedAt = person.CreatedAt.ToString("O")
                 };
 
                 var response = await _client.UpdatePersonAsync(request);
                 var duration = DateTime.Now - startTime;
 
-                Debug.WriteLine($"Update response received for ServerId: {response.Id}. Duration: {duration.TotalMilliseconds}ms");
+                Debug.WriteLine($"gRPC: Update completed in {duration.TotalMilliseconds}ms");
+                Debug.WriteLine($"gRPC: Response received for ID: {response.Id}");
 
-                return (response, duration);
+                return response;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error in UpdatePersonAsync: {ex.Message}");
+                Debug.WriteLine($"gRPC Error: {ex.Message}");
                 throw;
             }
         }

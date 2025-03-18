@@ -158,32 +158,62 @@ namespace PersonGrpcClient.Services
         {
             try
             {
+                var startTime = DateTime.Now;
+                Debug.WriteLine("Starting random update");
+
+                // Buscar todos os IDs primeiro (mais rápido que buscar registros completos)
                 var people = await _database.Table<Person>().ToListAsync();
                 var random = new Random();
+                const int batchSize = 100;
 
-                foreach (var person in people)
+                // Preparar todos os updates de uma vez
+                for (int i = 0; i < people.Count; i++)
                 {
-                    // Mantém o ID e outros campos de controle
-                    var originalId = person.Id;
-                    var originalServerId = person.ServerId;
-                    var originalCreatedAt = person.CreatedAt;
-
-                    // Modifica os dados aleatoriamente
-                    person.Age = random.Next(18, 80);
-                    person.Weight = Math.Round(random.NextDouble() * (120 - 50) + 50, 1); // Entre 50 e 120 kg
-                    person.LastSyncAttempt = null; // Marca para sincronização
-                    person.IsSynced = false;
-
-                    // Atualiza no SQLite
-                    await _database.UpdateAsync(person);
-                    Debug.WriteLine($"Updated person {person.Id} with new age: {person.Age}, weight: {person.Weight}");
+                    people[i].Age = random.Next(18, 80);
+                    people[i].Weight = Math.Round(random.NextDouble() * (120 - 50) + 50, 1);
+                    people[i].LastSyncAttempt = null;
+                    people[i].IsSynced = false;
                 }
+
+                // Executar em batches para melhor performance
+                await _database.RunInTransactionAsync(tran =>
+                {
+                    for (int i = 0; i < people.Count; i += batchSize)
+                    {
+                        var batch = people.Skip(i).Take(batchSize);
+                        foreach (var person in batch)
+                        {
+                            tran.Update(person);
+                        }
+                    }
+                });
+
+                var duration = DateTime.Now - startTime;
+                Debug.WriteLine($"Randomized {people.Count} records in {duration.TotalSeconds:F2} seconds");
+                Debug.WriteLine($"Average time per record: {duration.TotalMilliseconds / people.Count:F2}ms");
 
                 return people;
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error updating people randomly: {ex.Message}");
+                throw;
+            }
+        }
+
+        public async Task MarkMultipleAsSyncedAsync(List<int> ids, DateTime syncTime)
+        {
+            try
+            {
+                await _database.RunInTransactionAsync(tran =>
+                {
+                    var query = $"UPDATE Person SET IsSynced = 1, LastSyncAttempt = ? WHERE Id IN ({string.Join(",", ids)})";
+                    tran.Execute(query, syncTime);
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error marking multiple records as synced: {ex.Message}");
                 throw;
             }
         }
