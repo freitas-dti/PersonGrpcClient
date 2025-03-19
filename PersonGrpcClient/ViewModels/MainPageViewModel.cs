@@ -685,47 +685,45 @@ namespace PersonGrpcClient.ViewModels
 
                 var totalStartTime = DateTime.Now;
 
-                // Tempo para obter dados do PostgreSQL
                 Debug.WriteLine("Starting to fetch data from server");
                 var fetchStartTime = DateTime.Now;
                 var serverPeople = await _grpcClient.GetAllPeopleFromServerAsync();
-                var fetchDuration = DateTime.Now - fetchStartTime;
-                Debug.WriteLine($"Received {serverPeople.Count} records from server in {fetchDuration.TotalSeconds:F2} seconds");
 
-                if (serverPeople.Any())
+                Debug.WriteLine($"Received response from server. Records count: {serverPeople?.Count ?? 0}");
+
+                if (serverPeople?.Any() == true)
                 {
                     // Tempo para converter e salvar no SQLite
                     Debug.WriteLine("Converting and saving to SQLite");
                     var saveStartTime = DateTime.Now;
+                    var fetchDuration = DateTime.Now - fetchStartTime;
 
                     var localPeople = serverPeople.Select(p => new Person
                     {
+                        ServerId = p.Id,
                         Name = p.Name,
                         LastName = p.LastName,
                         Age = p.Age,
                         Weight = p.Weight,
-                        ServerId = p.Id,
-                        IsSynced = true,
                         CreatedAt = !string.IsNullOrEmpty(p.CreatedAt)
                             ? DateTime.Parse(p.CreatedAt)
                             : DateTime.Now,
                         LastSyncAttempt = !string.IsNullOrEmpty(p.SyncedAt)
                             ? DateTime.Parse(p.SyncedAt)
-                            : DateTime.Now
+                            : DateTime.Now,
+                        IsSynced = true // Importante: marcar como sincronizado
                     }).ToList();
 
                     await _databaseService.ClearAllDataAsync();
                     await _databaseService.BulkInsertPeopleAsync(localPeople);
 
                     var saveDuration = DateTime.Now - saveStartTime;
-                    Debug.WriteLine($"Saved {localPeople.Count} records to SQLite in {saveDuration.TotalSeconds:F2} seconds");
-
                     var totalTime = DateTime.Now - totalStartTime;
 
-                    // Recarrega a primeira página
+                    // Importante: Recarregar a primeira página
                     await LoadPageAsync(1);
 
-                    // Prepara relatório detalhado
+                    // Preparar relatório detalhado
                     var report = new StringBuilder();
                     report.AppendLine($"Sync Complete:");
                     report.AppendLine($"Total records: {serverPeople.Count}");
@@ -747,6 +745,7 @@ namespace PersonGrpcClient.ViewModels
                 }
                 else
                 {
+                    Debug.WriteLine("No records received from server");
                     await Application.Current.MainPage.DisplayAlert(
                         "Sync Complete",
                         "No records found on server",
@@ -756,6 +755,7 @@ namespace PersonGrpcClient.ViewModels
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error in SyncAllDataAsync: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
                 await Application.Current.MainPage.DisplayAlert(
                     "Sync Error",
                     $"Failed to synchronize data from server: {ex.Message}",

@@ -1,4 +1,5 @@
-﻿using Grpc.Net.Client;
+﻿using Grpc.Core;
+using Grpc.Net.Client;
 using Grpc.Net.Compression;
 using Microsoft.Extensions.Logging;
 using PersonGrpcClient.Models;
@@ -124,36 +125,23 @@ namespace PersonGrpcClient.Services
         {
             try
             {
-                Debug.WriteLine("gRPC: Starting GetAllPeopleFromServerAsync");
                 var startTime = DateTime.Now;
-                var people = new List<PersonResponse>();
+                Debug.WriteLine("gRPC: Starting fetch");
 
-                using var call = _client.GetAllPeople(new EmptyRequest());
+                var response = await _client.GetAllPeopleAsync(new EmptyRequest());
 
-                var count = 0;
-                var batchStartTime = DateTime.Now;
-                const int batchSize = 1000;
-
-                while (await call.ResponseStream.MoveNext(CancellationToken.None))
+                // Verificar se response.Items existe e tem dados
+                if (response?.Items == null)
                 {
-                    var person = call.ResponseStream.Current;
-                    people.Add(person);
-                    count++;
-
-                    if (count % batchSize == 0)
-                    {
-                        var batchDuration = DateTime.Now - batchStartTime;
-                        Debug.WriteLine($"gRPC: Received {count} records in {batchDuration.TotalMilliseconds}ms");
-                        batchStartTime = DateTime.Now;
-                    }
+                    Debug.WriteLine("gRPC: Response or Items is null");
+                    return new List<PersonResponse>();
                 }
 
-                var totalDuration = DateTime.Now - startTime;
-                Debug.WriteLine($"gRPC: Total records: {count}");
-                Debug.WriteLine($"gRPC: Total time: {totalDuration.TotalMilliseconds}ms");
-                Debug.WriteLine($"gRPC: Average time per record: {totalDuration.TotalMilliseconds / count:F2}ms");
+                var duration = DateTime.Now - startTime;
+                Debug.WriteLine($"gRPC: Fetch completed in {duration.TotalSeconds:F2}s");
+                Debug.WriteLine($"gRPC: Retrieved {response.Items.Count} records");
 
-                return people;
+                return response.Items.ToList();
             }
             catch (Exception ex)
             {

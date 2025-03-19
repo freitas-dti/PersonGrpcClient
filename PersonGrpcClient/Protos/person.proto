@@ -15,9 +15,13 @@ rpc SavePerson (PersonRequest) returns (PersonResponse);
 rpc SyncPeople (stream PersonRequest) returns (SyncResponse);
 
 rpc Ping (google.protobuf.Empty) returns (google.protobuf.Empty);
-rpc GetAllPeople (EmptyRequest) returns (stream PersonResponse);
+rpc GetAllPeople (EmptyRequest) returns (GetAllPeopleResponse);
 rpc UpdatePerson (PersonRequest) returns (PersonResponse);
 
+}
+
+message GetAllPeopleResponse {
+repeated PersonResponse items = 1;
 }
 
 message PersonRequest {
