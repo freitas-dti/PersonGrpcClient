@@ -3,18 +3,18 @@
 Esta aplicação cliente implementa um sistema de sincronização de dados entre um banco de dados local SQLite e um servidor central PostgreSQL. Desenvolvida com .NET MAUI, a aplicação permite trabalhar offline e sincronizar dados quando a conexão com a internet estiver disponível.
 
 ## Funcionalidades
-- Sincronização Bidirecional: Baixe dados do servidor e envie alterações locais
-- Trabalho Offline: Acesse e modifique dados mesmo sem conexão
-- Comparativo de Performance: Compare gRPC vs REST para transferência de dados
-- Paginação: Navegue por grandes conjuntos de dados de forma eficiente
-- Randomização de Dados: Gere dados aleatórios para testes de performance
+- **Sincronização Bidirecional**: Baixe dados do servidor e envie alterações locais
+- **Trabalho Offline**: Acesse e modifique dados mesmo sem conexão
+- **Comparativo de Performance**: Compare gRPC vs REST para transferência de dados
+- **Paginação**: Navegue por grandes conjuntos de dados de forma eficiente
+- **Randomização de Dados**: Gere dados aleatórios para testes de performance
 
 ## Tecnologias Utilizadas
-- .NET MAUI: Framework para desenvolvimento multiplataforma
-- SQLite: Banco de dados local
-- gRPC: Comunicação eficiente baseada em HTTP/2
-- REST: API HTTP tradicional para comparação
-- MVVM: Padrão de arquitetura para separação de responsabilidades
+- **.NET MAUI**: Framework para desenvolvimento multiplataforma
+- **SQLite**: Banco de dados local
+- **gRPC**: Comunicação eficiente baseada em HTTP/2
+- **REST**: API HTTP tradicional para comparação
+- **MVVM**: Padrão de arquitetura para separação de responsabilidades
 
 ## Estrutura do Projeto
 ```
@@ -38,9 +38,10 @@ PersonGrpcClient/
 2. Clone o repositório
 3. Configure o endereço do servidor em GrpcClientService.cs e RestClientService.cs
 4. Execute o projeto:
-`dotnet build` e 
-`dotnet run`
-
+```bash
+$ dotnet build
+$ dotnet run
+```
 # Principais Operações
 ```mermaid
 flowchart LR
