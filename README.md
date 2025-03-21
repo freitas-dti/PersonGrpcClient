@@ -73,12 +73,12 @@ class DB dbNode;
 
 |Operação |	Descrição |
 |---------|-----------|
-|Sync All (gRPC)|	Baixa todos os dados do servidor via gRPC|
-|Sync All (REST)|	Baixa todos os dados do servidor via REST|
-|Randomize|	Modifica dados locais aleatoriamente para testes|
-|Sync Changes (gRPC)|	Envia alterações locais para o servidor via gRPC|
-|Sync Changes (REST)|	Envia alterações locais para o servidor via REST|
-|Clear Data|	Limpa todos os dados locais|
+|**Sync All (gRPC)**|	Baixa todos os dados do servidor via gRPC|
+|**Sync All (REST)**|	Baixa todos os dados do servidor via REST|
+|**Randomize**|	Modifica dados locais aleatoriamente para testes|
+|**Sync Changes (gRPC)**|	Envia alterações locais para o servidor via gRPC|
+|**Sync Changes (REST)**|	Envia alterações locais para o servidor via REST|
+|**Clear Data**|	Limpa todos os dados locais|
 
 ## Métricas de Performance
 A aplicação exibe métricas detalhadas para cada operação:
