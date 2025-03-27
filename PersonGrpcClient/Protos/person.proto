@@ -15,7 +15,13 @@ rpc SavePerson (PersonRequest) returns (PersonResponse);
 rpc SyncPeople (stream PersonRequest) returns (SyncResponse);
 
 rpc Ping (google.protobuf.Empty) returns (google.protobuf.Empty);
+rpc GetAllPeople (EmptyRequest) returns (GetAllPeopleResponse);
+rpc UpdatePerson (PersonRequest) returns (PersonResponse);
 
+}
+
+message GetAllPeopleResponse {
+repeated PersonResponse items = 1;
 }
 
 message PersonRequest {
@@ -44,3 +50,6 @@ bool success = 1;
 repeated string syncedIds = 2;  // IDs locais sincronizados
 string message = 3;
 }
+
+message EmptyRequest {}
+message EmptyResponse {}

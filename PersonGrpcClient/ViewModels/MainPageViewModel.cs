@@ -2,6 +2,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Windows.Input;
 using PersonGrpcClient.Models;
 using PersonGrpcClient.Services;
@@ -26,11 +27,32 @@ namespace PersonGrpcClient.ViewModels
         private ObservableCollection<PersonDisplay> _syncedPeople;
         private ObservableCollection<PersonDisplay> _pendingPeople;
         private bool _isCheckingServer;
+        private bool _autoSyncEnabled = false; // Controle para sincronização automática
+
+        // paginação
+        private int _currentPage = 1;
+        private int _pageSize =20;
+        private int _totalRecords;
+        private string _paginationInfo;
+
+        public ICommand SyncAllDataCommand { get; }
+        public ICommand NextPageCommand { get; }
+        public ICommand PreviousPageCommand { get; }
+        public ICommand RandomizeDataCommand { get; }
+        public ICommand SyncChangesCommand { get; }
+
+        
+        //REST
+        private readonly RestClientService _restClient;
+        public ICommand SyncAllRestCommand { get; }
+        public ICommand SyncChangesRestCommand { get; }
+
 
         public event PropertyChangedEventHandler PropertyChanged;
 
         public MainPageViewModel(
             DatabaseService databaseService,
+            RestClientService restClient,
             GrpcClientService grpcClient,
             IConnectivity connectivity,
             IDispatcher dispatcher)
@@ -39,6 +61,7 @@ namespace PersonGrpcClient.ViewModels
             _grpcClient = grpcClient;
             _connectivity = connectivity;
             _dispatcher = dispatcher;
+            _restClient = restClient;
 
             SyncedPeople = new ObservableCollection<PersonDisplay>();
             PendingPeople = new ObservableCollection<PersonDisplay>();
@@ -47,7 +70,21 @@ namespace PersonGrpcClient.ViewModels
             ClearDataCommand = new Command(async () => await ClearDataAsync());
             SyncNowCommand = new Command(async () => await SyncPendingDataAsync(), () => HasPendingRecords && !IsBusy);
 
-            _connectivity.ConnectivityChanged += OnConnectivityChanged;
+            NextPageCommand = new Command(async () => await LoadNextPageAsync(), () => CanGoNext);
+            PreviousPageCommand = new Command(async () => await LoadPreviousPageAsync(), () => CanGoPrevious);
+
+            SyncAllDataCommand = new Command(async () => await SyncAllDataAsync());
+            RandomizeDataCommand = new Command(async () => await RandomizeDataAsync());
+            SyncChangesCommand = new Command(async () => await SyncChangesAsync());
+
+            // Carregar dados iniciais
+            Task.Run(async () => await InitializeDataAsync());
+
+            //REST
+            SyncAllRestCommand = new Command(async () => await SyncAllRestAsync());
+            SyncChangesRestCommand = new Command(async () => await SyncChangesRestAsync());
+
+        _connectivity.ConnectivityChanged += OnConnectivityChanged;
             UpdateConnectionStatus();
             LoadSavedPeople();
 
@@ -60,6 +97,15 @@ namespace PersonGrpcClient.ViewModels
 
         #region Properties
 
+        public string PaginationInfo
+        {
+            get => _paginationInfo;
+            set
+            {
+                _paginationInfo = value;
+                OnPropertyChanged();
+            }
+        }
         public string Name
         {
             get => _name;
@@ -387,16 +433,21 @@ namespace PersonGrpcClient.ViewModels
         private async void OnConnectivityChanged(object sender, ConnectivityChangedEventArgs e)
         {
             UpdateConnectionStatus();
-            if (e.NetworkAccess == NetworkAccess.Internet && HasPendingRecords && !_isCheckingServer)
+
+            // Sincronização automática desabilitada para o cenário atual
+            if (_autoSyncEnabled) // Só executará quando reativarmos o formulário
             {
-                try
+                if (e.NetworkAccess == NetworkAccess.Internet && HasPendingRecords && !_isCheckingServer)
                 {
-                    _isCheckingServer = true;
-                    await SyncPendingDataAsync();
-                }
-                finally
-                {
-                    _isCheckingServer = false;
+                    try
+                    {
+                        _isCheckingServer = true;
+                        await SyncPendingDataAsync();
+                    }
+                    finally
+                    {
+                        _isCheckingServer = false;
+                    }
                 }
             }
         }
@@ -601,7 +652,7 @@ namespace PersonGrpcClient.ViewModels
 
         private async void Timer_Tick(object sender, EventArgs e)
         {
-            if (_connectivity.NetworkAccess == NetworkAccess.Internet && HasPendingRecords && !IsBusy)
+            if (_autoSyncEnabled  && _connectivity.NetworkAccess == NetworkAccess.Internet && HasPendingRecords && !IsBusy)
             {
                 await SyncPendingDataAsync();
             }
@@ -613,6 +664,610 @@ namespace PersonGrpcClient.ViewModels
             {
                 _timer.Stop();
                 _timer.Tick -= Timer_Tick;
+            }
+        }
+
+        private async Task SyncAllDataAsync()
+        {
+            if (IsBusy) return;
+
+            try
+            {
+                IsBusy = true;
+                Debug.WriteLine("Starting SyncAllDataAsync");
+
+                var shouldSync = await Application.Current.MainPage.DisplayAlert(
+                    "Full Sync",
+                    "This will download all records from the server. Continue?",
+                    "Yes", "No");
+
+                if (!shouldSync) return;
+
+                var totalStartTime = DateTime.Now;
+
+                Debug.WriteLine("Starting to fetch data from server");
+                var fetchStartTime = DateTime.Now;
+                var serverPeople = await _grpcClient.GetAllPeopleFromServerAsync();
+
+                Debug.WriteLine($"Received response from server. Records count: {serverPeople?.Count ?? 0}");
+
+                if (serverPeople?.Any() == true)
+                {
+                    // Tempo para converter e salvar no SQLite
+                    Debug.WriteLine("Converting and saving to SQLite");
+                    var saveStartTime = DateTime.Now;
+                    var fetchDuration = DateTime.Now - fetchStartTime;
+
+                    var localPeople = serverPeople.Select(p => new Person
+                    {
+                        ServerId = p.Id,
+                        Name = p.Name,
+                        LastName = p.LastName,
+                        Age = p.Age,
+                        Weight = p.Weight,
+                        CreatedAt = !string.IsNullOrEmpty(p.CreatedAt)
+                            ? DateTime.Parse(p.CreatedAt)
+                            : DateTime.Now,
+                        LastSyncAttempt = !string.IsNullOrEmpty(p.SyncedAt)
+                            ? DateTime.Parse(p.SyncedAt)
+                            : DateTime.Now,
+                        IsSynced = true // Importante: marcar como sincronizado
+                    }).ToList();
+
+                    await _databaseService.ClearAllDataAsync();
+                    await _databaseService.BulkInsertPeopleAsync(localPeople);
+
+                    var saveDuration = DateTime.Now - saveStartTime;
+                    var totalTime = DateTime.Now - totalStartTime;
+
+                    // Importante: Recarregar a primeira página
+                    await LoadPageAsync(1);
+
+                    // Preparar relatório detalhado
+                    var report = new StringBuilder();
+                    report.AppendLine($"Sync Complete:");
+                    report.AppendLine($"Total records: {serverPeople.Count}");
+                    report.AppendLine();
+                    report.AppendLine($"Fetch from PostgreSQL: {fetchDuration.TotalSeconds:F2} seconds");
+                    report.AppendLine($"Save to SQLite: {saveDuration.TotalSeconds:F2} seconds");
+                    report.AppendLine($"Total time: {totalTime.TotalSeconds:F2} seconds");
+                    report.AppendLine();
+                    report.AppendLine($"Average fetch time: {(fetchDuration.TotalMilliseconds / serverPeople.Count):F2} ms/record");
+                    report.AppendLine($"Average save time: {(saveDuration.TotalMilliseconds / serverPeople.Count):F2} ms/record");
+                    report.AppendLine($"Throughput: {serverPeople.Count / totalTime.TotalSeconds:F2} records/second");
+
+                    Debug.WriteLine(report.ToString());
+
+                    await Application.Current.MainPage.DisplayAlert(
+                        "Sync Complete",
+                        report.ToString(),
+                        "OK");
+                }
+                else
+                {
+                    Debug.WriteLine("No records received from server");
+                    await Application.Current.MainPage.DisplayAlert(
+                        "Sync Complete",
+                        "No records found on server",
+                        "OK");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in SyncAllDataAsync: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                await Application.Current.MainPage.DisplayAlert(
+                    "Sync Error",
+                    $"Failed to synchronize data from server: {ex.Message}",
+                    "OK");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task LoadPageAsync(int page)
+        {
+            try
+            {
+                IsBusy = true;
+
+                var (items, totalCount) = await _databaseService.GetPaginatedPeopleAsync(page, _pageSize);
+
+                _totalRecords = totalCount;
+                var totalPages = (int)Math.Ceiling(totalCount / (double)_pageSize);
+
+                _dispatcher.Dispatch(() =>
+                {
+                    SyncedPeople.Clear();
+                    foreach (var person in items)
+                    {
+                        var displayPerson = new PersonDisplay
+                        {
+                            Id = person.Id,
+                            ServerId = person.ServerId,
+                            Name = person.Name,
+                            LastName = person.LastName,
+                            Age = person.Age,
+                            Weight = person.Weight,
+                            Status = person.IsSynced ? SyncStatus.Synced : SyncStatus.LocallySaved,
+                            CreatedAt = person.CreatedAt,
+                            LastSyncAttempt = person.LastSyncAttempt
+                        };
+                        SyncedPeople.Add(displayPerson);
+                    }
+
+                    _currentPage = page;
+                    PaginationInfo = $"Page {_currentPage} of {totalPages} (Total: {totalCount})";
+
+                    OnPropertyChanged(nameof(CanGoNext));
+                    OnPropertyChanged(nameof(CanGoPrevious));
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading page {page}: {ex.Message}");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task LoadNextPageAsync()
+        {
+            if (CanGoNext)
+            {
+                await LoadPageAsync(_currentPage + 1);
+            }
+        }
+
+        private async Task LoadPreviousPageAsync()
+        {
+            if (CanGoPrevious)
+            {
+                await LoadPageAsync(_currentPage - 1);
+            }
+        }
+
+        // Também podemos adicionar propriedades para controlar a habilitação dos botões
+        public bool CanGoNext => !IsBusy && _currentPage < Math.Ceiling(_totalRecords / (double)_pageSize);
+        public bool CanGoPrevious => !IsBusy && _currentPage > 1;
+
+        private async Task RandomizeDataAsync()
+        {
+            if (IsBusy) return;
+
+            try
+            {
+                IsBusy = true;
+
+                var shouldRandomize = await Application.Current.MainPage.DisplayAlert(
+                    "Confirm Randomize",
+                    "This will modify all existing records with random data. Continue?",
+                    "Yes", "No");
+
+                if (!shouldRandomize) return;
+
+                var totalStartTime = DateTime.Now;
+
+                // Atualizar dados randomicamente
+                Debug.WriteLine("Starting randomization...");
+                var updatedPeople = await _databaseService.UpdatePeopleRandomlyAsync();
+                var randomizeDuration = DateTime.Now - totalStartTime;
+
+                // Recarregar a página atual
+                var reloadStart = DateTime.Now;
+                await LoadPageAsync(_currentPage);
+                var reloadDuration = DateTime.Now - reloadStart;
+
+                var totalDuration = DateTime.Now - totalStartTime;
+
+                // Preparar relatório detalhado
+                var report = new StringBuilder();
+                report.AppendLine($"Randomization Complete:");
+                report.AppendLine($"Total records: {updatedPeople.Count}");
+                report.AppendLine();
+                report.AppendLine($"Randomization time: {randomizeDuration.TotalSeconds:F2} seconds");
+                report.AppendLine($"UI reload time: {reloadDuration.TotalSeconds:F2} seconds");
+                report.AppendLine($"Total time: {totalDuration.TotalSeconds:F2} seconds");
+                report.AppendLine();
+                report.AppendLine($"Average time per record: {randomizeDuration.TotalMilliseconds / updatedPeople.Count:F2}ms");
+                report.AppendLine();
+                report.AppendLine("Click 'Sync Changes' to persist to server.");
+
+                Debug.WriteLine(report.ToString());
+
+                await Application.Current.MainPage.DisplayAlert(
+                    "Randomization Complete",
+                    report.ToString(),
+                    "OK");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in RandomizeDataAsync: {ex.Message}");
+                await Application.Current.MainPage.DisplayAlert(
+                    "Error",
+                    "Failed to randomize data. Please try again.",
+                    "OK");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task SyncChangesAsync()
+        {
+            if (IsBusy) return;
+
+            try
+            {
+                IsBusy = true;
+
+                var unsyncedPeople = await _databaseService.GetUnsyncedPeopleAsync();
+                Debug.WriteLine($"Found {unsyncedPeople.Count} unsynced records");
+
+                if (!unsyncedPeople.Any())
+                {
+                    await Application.Current.MainPage.DisplayAlert(
+                        "No Changes",
+                        "There are no changes to sync.",
+                        "OK");
+                    return;
+                }
+
+                if (_connectivity.NetworkAccess != NetworkAccess.Internet)
+                {
+                    await Application.Current.MainPage.DisplayAlert(
+                        "No Internet Connection",
+                        "You're offline. Changes will be synced when internet connection is restored.",
+                        "OK");
+                    return;
+                }
+
+                var shouldSync = await Application.Current.MainPage.DisplayAlert(
+                    "Confirm Sync",
+                    $"There are {unsyncedPeople.Count} records to sync. Continue?",
+                    "Yes", "No");
+
+                if (!shouldSync) return;
+
+                var totalStartTime = DateTime.Now;
+                var successCount = 0;
+                var failureCount = 0;
+                var totalDuration = TimeSpan.Zero;
+
+                // Criar lotes menores para processamento mais eficiente
+                const int batchSize = 50;
+                var batches = unsyncedPeople
+                    .Select((x, i) => new { Index = i, Value = x })
+                    .GroupBy(x => x.Index / batchSize)
+                    .Select(g => g.Select(x => x.Value).ToList())
+                    .ToList();
+
+                Debug.WriteLine($"Processing {batches.Count} batches of {batchSize} records each");
+
+                // Processar os lotes em paralelo com limite de concorrência
+                using var semaphore = new SemaphoreSlim(5); // Limitar a 5 chamadas simultâneas
+                var tasks = new List<Task>();
+
+                foreach (var batch in batches)
+                {
+                    await semaphore.WaitAsync();
+
+                    tasks.Add(Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var batchStartTime = DateTime.Now;
+                            var batchSuccess = 0;
+                            var batchUpdates = new List<(int Id, DateTime SyncTime)>();
+
+                            foreach (var person in batch)
+                            {
+                                try
+                                {
+                                    var response = await _grpcClient.UpdatePersonAsync(person);
+                                    if (response.Saved)
+                                    {
+                                        batchSuccess++;
+                                        batchUpdates.Add((person.Id, DateTime.Now));
+                                    }
+                                    else
+                                    {
+                                        Debug.WriteLine($"Failed to update person {person.Id}: {response.Message}");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Debug.WriteLine($"Error updating person {person.Id}: {ex.Message}");
+                                }
+                            }
+
+                            // Atualizar registros em lote no SQLite
+                            if (batchUpdates.Any())
+                            {
+                                await _databaseService.MarkMultipleAsSyncedAsync(
+                                    batchUpdates.Select(x => x.Id).ToList(),
+                                    DateTime.Now);
+                            }
+
+                            Interlocked.Add(ref successCount, batchSuccess);
+                            Interlocked.Add(ref failureCount, batch.Count - batchSuccess);
+
+                            var batchDuration = DateTime.Now - batchStartTime;
+                            Debug.WriteLine($"Batch completed: {batchSuccess}/{batch.Count} in {batchDuration.TotalSeconds:F2}s");
+                        }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
+                    }));
+                }
+
+                // Aguardar todas as tarefas completarem
+                await Task.WhenAll(tasks);
+
+                var totalTime = DateTime.Now - totalStartTime;
+
+                // Atualizar a interface
+                await LoadPageAsync(_currentPage);
+
+                // Preparar relatório detalhado
+                var report = new StringBuilder();
+                report.AppendLine($"Sync Complete:");
+                report.AppendLine($"Total records processed: {unsyncedPeople.Count}");
+                report.AppendLine($"Successful: {successCount}");
+                report.AppendLine($"Failed: {failureCount}");
+                report.AppendLine();
+                report.AppendLine($"Total time: {totalTime.TotalSeconds:F2} seconds");
+                report.AppendLine($"Average time per record: {totalTime.TotalMilliseconds / unsyncedPeople.Count:F2} ms");
+                report.AppendLine($"Throughput: {successCount / totalTime.TotalSeconds:F2} records/second");
+
+                Debug.WriteLine(report.ToString());
+
+                await Application.Current.MainPage.DisplayAlert(
+                    successCount == unsyncedPeople.Count ? "Sync Complete" : "Sync Partially Complete",
+                    report.ToString(),
+                    "OK");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in SyncChangesAsync: {ex.Message}");
+                await Application.Current.MainPage.DisplayAlert(
+                    "Sync Error",
+                    "An error occurred while trying to sync changes.",
+                    "OK");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task InitializeDataAsync()
+        {
+            try
+            {
+                IsBusy = true;
+                Debug.WriteLine("Loading initial data...");
+
+                // Carregar primeira página
+                await LoadPageAsync(1);
+
+                Debug.WriteLine("Initial data loaded successfully");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading initial data: {ex.Message}");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        //REST
+        private async Task SyncAllRestAsync()
+        {
+            if (IsBusy) return;
+
+            try
+            {
+                IsBusy = true;
+
+                var shouldSync = await Application.Current.MainPage.DisplayAlert(
+                    "REST Full Sync",
+                    "This will download all records from the server using REST. Continue?",
+                    "Yes", "No");
+
+                if (!shouldSync) return;
+
+                var totalStartTime = DateTime.Now;
+
+                // Tempo para obter dados via REST
+                Debug.WriteLine("Starting to fetch data from REST server");
+                var fetchStartTime = DateTime.Now;
+                var (serverPeople, fetchDuration) = await _restClient.GetAllPeopleAsync();
+                Debug.WriteLine($"Received {serverPeople.Count} records from server");
+
+                if (serverPeople.Any())
+                {
+                    // Tempo para salvar no SQLite
+                    Debug.WriteLine("Converting and saving to SQLite");
+                    var saveStartTime = DateTime.Now;
+
+                    await _databaseService.ClearAllDataAsync();
+                    await _databaseService.BulkInsertPeopleAsync(serverPeople);
+
+                    var saveDuration = DateTime.Now - saveStartTime;
+                    var totalTime = DateTime.Now - totalStartTime;
+
+                    // Recarrega a primeira página
+                    await LoadPageAsync(1);
+
+                    // Prepara relatório detalhado
+                    var report = new StringBuilder();
+                    report.AppendLine($"REST Sync Complete:");
+                    report.AppendLine($"Total records: {serverPeople.Count}");
+                    report.AppendLine();
+                    report.AppendLine($"Fetch from REST API: {fetchDuration.TotalSeconds:F2} seconds");
+                    report.AppendLine($"Save to SQLite: {saveDuration.TotalSeconds:F2} seconds");
+                    report.AppendLine($"Total time: {totalTime.TotalSeconds:F2} seconds");
+                    report.AppendLine();
+                    report.AppendLine($"Average fetch time: {(fetchDuration.TotalMilliseconds / serverPeople.Count):F2} ms/record");
+                    report.AppendLine($"Average save time: {(saveDuration.TotalMilliseconds / serverPeople.Count):F2} ms/record");
+                    report.AppendLine($"Throughput: {serverPeople.Count / totalTime.TotalSeconds:F2} records/second");
+
+                    Debug.WriteLine(report.ToString());
+
+                    await Application.Current.MainPage.DisplayAlert(
+                        "REST Sync Complete",
+                        report.ToString(),
+                        "OK");
+                }
+                else
+                {
+                    await Application.Current.MainPage.DisplayAlert(
+                        "REST Sync Complete",
+                        "No records found on server",
+                        "OK");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in REST sync: {ex.Message}");
+                await Application.Current.MainPage.DisplayAlert(
+                    "REST Sync Error",
+                    $"Failed to synchronize data from server: {ex.Message}",
+                    "OK");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task SyncChangesRestAsync()
+        {
+            if (IsBusy) return;
+
+            try
+            {
+                IsBusy = true;
+
+                var unsyncedPeople = await _databaseService.GetUnsyncedPeopleAsync();
+                Debug.WriteLine($"Found {unsyncedPeople.Count} unsynced records");
+
+                if (!unsyncedPeople.Any())
+                {
+                    await Application.Current.MainPage.DisplayAlert(
+                        "No Changes",
+                        "There are no changes to sync.",
+                        "OK");
+                    return;
+                }
+
+                if (_connectivity.NetworkAccess != NetworkAccess.Internet)
+                {
+                    await Application.Current.MainPage.DisplayAlert(
+                        "No Internet Connection",
+                        "You're offline. Changes will be synced when internet connection is restored.",
+                        "OK");
+                    return;
+                }
+
+                var shouldSync = await Application.Current.MainPage.DisplayAlert(
+                    "Confirm REST Sync",
+                    $"There are {unsyncedPeople.Count} records to sync. Continue?",
+                    "Yes", "No");
+
+                if (!shouldSync) return;
+
+                var totalStartTime = DateTime.Now;
+                var successCount = 0;
+                var failureCount = 0;
+                var totalDuration = TimeSpan.Zero;
+
+                // Criar lotes para melhor performance
+                var batchSize = 100;
+                var batches = unsyncedPeople
+                    .Select((x, i) => new { Index = i, Value = x })
+                    .GroupBy(x => x.Index / batchSize)
+                    .Select(g => g.Select(x => x.Value).ToList())
+                    .ToList();
+
+                Debug.WriteLine($"Starting REST sync of {batches.Count} batches of {batchSize} records each");
+
+                var batchNumber = 1;
+                foreach (var batch in batches)
+                {
+                    var batchStartTime = DateTime.Now;
+                    var batchSuccess = 0;
+
+                    foreach (var person in batch)
+                    {
+                        try
+                        {
+                            var (response, duration) = await _restClient.UpdatePersonAsync(person);
+
+                            person.IsSynced = true;
+                            person.LastSyncAttempt = DateTime.Now;
+                            await _databaseService.UpdatePersonAsync(person);
+                            successCount++;
+                            batchSuccess++;
+                            totalDuration += duration;
+                        }
+                        catch (Exception ex)
+                        {
+                            failureCount++;
+                            Debug.WriteLine($"Error syncing person {person.Id}: {ex.Message}");
+                        }
+                    }
+
+                    var batchDuration = DateTime.Now - batchStartTime;
+                    Debug.WriteLine($"Batch {batchNumber}/{batches.Count} completed: " +
+                                  $"{batchSuccess}/{batch.Count} successful in {batchDuration.TotalSeconds:F2}s");
+                    batchNumber++;
+                }
+
+                var totalTime = DateTime.Now - totalStartTime;
+                var averageTime = successCount > 0 ? totalDuration.TotalMilliseconds / successCount : 0;
+
+                // Atualiza a interface
+                await LoadPageAsync(_currentPage);
+
+                // Prepara relatório detalhado
+                var report = new StringBuilder();
+                report.AppendLine($"REST Sync Complete:");
+                report.AppendLine($"Total records processed: {unsyncedPeople.Count}");
+                report.AppendLine($"Successful: {successCount}");
+                report.AppendLine($"Failed: {failureCount}");
+                report.AppendLine();
+                report.AppendLine($"Total time: {totalTime.TotalSeconds:F2} seconds");
+                report.AppendLine($"Average time per record: {averageTime:F2} ms");
+                report.AppendLine($"Throughput: {successCount / totalTime.TotalSeconds:F2} records/second");
+
+                Debug.WriteLine(report.ToString());
+
+                await Application.Current.MainPage.DisplayAlert(
+                    "REST Sync Results",
+                    report.ToString(),
+                    "OK");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in REST sync changes: {ex.Message}");
+                await Application.Current.MainPage.DisplayAlert(
+                    "Sync Error",
+                    "An error occurred while trying to sync changes.",
+                    "OK");
+            }
+            finally
+            {
+                IsBusy = false;
             }
         }
         #endregion
